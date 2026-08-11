@@ -17,6 +17,7 @@ export function getRoleFromEmail(email: string): Role {
   const normalized = email.toLowerCase();
   if (normalized.includes("subham")) return Role.admin;
   if (normalized.includes("alpana")) return Role.mother;
+  if (normalized.includes("jhinuk")) return Role.wife;
   if (normalized.includes("jethalal")) return Role.temp;
   if (normalized.includes("hackoverflow")) return Role.friend;
   return Role.friend;
