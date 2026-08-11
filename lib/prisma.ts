@@ -4,30 +4,24 @@ import { Pool } from "pg";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
-  prismaClientKey?: string;
 };
 
-// Bump this when the Prisma schema changes so dev hot-reload gets a fresh client.
-const PRISMA_CLIENT_KEY = "role-friend-v1";
-
 function createPrismaClient() {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  const adapter = new PrismaPg(pool);
-  return new PrismaClient({ adapter });
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: process.env.VERCEL ? 1 : 10,
+    idleTimeoutMillis: process.env.VERCEL ? 5_000 : 30_000,
+    connectionTimeoutMillis: 10_000,
+    ssl: process.env.DATABASE_URL?.includes("sslmode=require")
+      ? { rejectUnauthorized: false }
+      : undefined,
+  });
+
+  return new PrismaClient({ adapter: new PrismaPg(pool) });
 }
 
-function getPrismaClient() {
-  if (
-    process.env.NODE_ENV !== "production" &&
-    globalForPrisma.prismaClientKey !== PRISMA_CLIENT_KEY
-  ) {
-    globalForPrisma.prisma = createPrismaClient();
-    globalForPrisma.prismaClientKey = PRISMA_CLIENT_KEY;
-  }
+export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
-  globalForPrisma.prisma ??= createPrismaClient();
-
-  return globalForPrisma.prisma;
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma;
 }
-
-export const prisma = getPrismaClient();

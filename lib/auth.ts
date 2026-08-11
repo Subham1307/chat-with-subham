@@ -5,6 +5,14 @@ import { prisma } from "@/lib/prisma";
 
 export type UserRole = Role;
 
+function requiredEnv(name: string) {
+  const value = process.env[name];
+  if (!value && process.env.NODE_ENV === "production") {
+    throw new Error(`${name} is required in production`);
+  }
+  return value ?? "";
+}
+
 export function getRoleFromEmail(email: string): Role {
   const normalized = email.toLowerCase();
   if (normalized.includes("subham")) return Role.admin;
@@ -17,14 +25,14 @@ export function getRoleFromEmail(email: string): Role {
 export const AUTH_CONFIG: NextAuthOptions = {
   providers: [
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID as string,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+      clientId: requiredEnv("GOOGLE_CLIENT_ID"),
+      clientSecret: requiredEnv("GOOGLE_CLIENT_SECRET"),
     }),
   ],
   session: {
     strategy: "jwt",
   },
-  secret: process.env.NEXTAUTH_SECRET,
+  secret: process.env.NEXTAUTH_SECRET ?? process.env.AUTH_SECRET,
   callbacks: {
     async signIn({ user, account }) {
       if (account?.provider !== "google") return false;
@@ -40,7 +48,7 @@ export const AUTH_CONFIG: NextAuthOptions = {
           data: {
             email: user.email,
             name: user.name ?? null,
-            image: user.image ?? null,
+            image: null,
             role,
           },
         });

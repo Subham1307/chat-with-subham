@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth, type UserRole } from "@/lib/auth";
+import { canChatWith, requireAuthUser } from "@/lib/require-auth";
 import { prisma } from "@/lib/prisma";
 
-const VALID_ROLES: UserRole[] = ["admin", "mother", "wife", "temp", "friend"];
-const POLL_TIMEOUT_MS = 30_000;
-const POLL_INTERVAL_MS = 1_000;
+export const dynamic = "force-dynamic";
+export const maxDuration = 10;
 
-function isUserRole(role: string): role is UserRole {
-  return VALID_ROLES.includes(role as UserRole);
-}
+const POLL_TIMEOUT_MS = 8_000;
+const POLL_INTERVAL_MS = 1_000;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -23,59 +21,17 @@ function conversationFilter(userId: string, withUserId: string) {
   };
 }
 
-async function canChatWith(
-  senderRole: UserRole,
-  senderId: string,
-  withUserId: string,
-) {
-  if (withUserId === senderId) return false;
-
-  const partner = await prisma.user.findUnique({
-    where: { id: withUserId },
-    select: { id: true, role: true },
-  });
-
-  if (!partner) return false;
-  if (senderRole !== "admin" && partner.role !== "admin") return false;
-
-  return true;
-}
-
 export async function GET(request: NextRequest) {
-  const session = await auth();
+  const authResult = await requireAuthUser();
+  if (authResult.error) return authResult.error;
 
-  if (!session?.user?.role) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { role, id: sessionUserId } = session.user;
-
-  if (!isUserRole(role)) {
-    return NextResponse.json({ error: "Invalid role" }, { status: 403 });
-  }
-
-  const user = await prisma.user.findUnique({
-    where: { role },
-    select: { id: true },
-  });
-
-  if (!user) {
-    return NextResponse.json(
-      { error: "No user found for this role" },
-      { status: 404 },
-    );
-  }
-
-  if (user.id !== sessionUserId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
+  const { user } = authResult;
   const withUserId = request.nextUrl.searchParams.get("withUserId");
   const afterParam = request.nextUrl.searchParams.get("after");
   const wait = request.nextUrl.searchParams.get("wait") === "true";
 
   if (withUserId) {
-    const allowed = await canChatWith(role, user.id, withUserId);
+    const allowed = await canChatWith(user.role, user.id, withUserId);
     if (!allowed) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

@@ -1,41 +1,14 @@
 import { NextResponse } from "next/server";
-import { auth, type UserRole } from "@/lib/auth";
+import { canChatWith, requireAuthUser } from "@/lib/require-auth";
 import { prisma } from "@/lib/prisma";
 
-const VALID_ROLES: UserRole[] = ["admin", "mother", "wife", "temp", "friend"];
-
-function isUserRole(role: string): role is UserRole {
-  return VALID_ROLES.includes(role as UserRole);
-}
+export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const session = await auth();
+  const authResult = await requireAuthUser();
+  if (authResult.error) return authResult.error;
 
-  if (!session?.user?.role) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { role, id: sessionUserId } = session.user;
-
-  if (!isUserRole(role)) {
-    return NextResponse.json({ error: "Invalid role" }, { status: 403 });
-  }
-
-  const sender = await prisma.user.findUnique({
-    where: { role },
-    select: { id: true, role: true },
-  });
-
-  if (!sender) {
-    return NextResponse.json(
-      { error: "No user found for this role" },
-      { status: 404 },
-    );
-  }
-
-  if (sender.id !== sessionUserId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const { user } = authResult;
 
   let body: { toId?: string; text?: string };
   try {
@@ -54,23 +27,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "text is required" }, { status: 400 });
   }
 
-  if (toId === sender.id) {
+  if (toId === user.id) {
     return NextResponse.json(
       { error: "Cannot send a message to yourself" },
       { status: 400 },
     );
   }
 
-  const recipient = await prisma.user.findUnique({
-    where: { id: toId },
-    select: { id: true, role: true },
-  });
-
-  if (!recipient) {
-    return NextResponse.json({ error: "Recipient not found" }, { status: 404 });
-  }
-
-  if (role !== "admin" && recipient.role !== "admin") {
+  const allowed = await canChatWith(user.role, user.id, toId);
+  if (!allowed) {
     return NextResponse.json(
       { error: "You can only send messages to admin" },
       { status: 403 },
@@ -80,8 +45,8 @@ export async function POST(request: Request) {
   const message = await prisma.message.create({
     data: {
       text: text.trim(),
-      fromId: sender.id,
-      toId: recipient.id,
+      fromId: user.id,
+      toId,
     },
   });
 

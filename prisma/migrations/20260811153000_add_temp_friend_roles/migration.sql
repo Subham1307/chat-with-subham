@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "Role" ADD VALUE IF NOT EXISTS 'temp';
+ALTER TYPE "Role" ADD VALUE IF NOT EXISTS 'friend';
