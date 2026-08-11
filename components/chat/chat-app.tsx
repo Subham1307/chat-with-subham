@@ -43,12 +43,12 @@ export function ChatApp() {
   const [loadingChats, setLoadingChats] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
-  const [markingReadId, setMarkingReadId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mobileShowChat, setMobileShowChat] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const afterRef = useRef<string>(new Date(0).toISOString());
+  const markingSeenRef = useRef(false);
 
   const currentUserId = session?.user?.id;
   const isChatOpen = Boolean(
@@ -183,6 +183,40 @@ export function ChatApp() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [filteredMessages]);
 
+  useEffect(() => {
+    if (!isChatOpen || !selectedChatId || !currentUserId) return;
+
+    const hasUnread = messages.some(
+      (message) =>
+        message.toId === currentUserId && message.status === "SENT",
+    );
+
+    if (!hasUnread || markingSeenRef.current) return;
+
+    markingSeenRef.current = true;
+
+    void fetch("/api/messages/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ withUserId: selectedChatId }),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Failed to mark messages as read");
+        }
+        const updated: ChatMessage[] = await response.json();
+        if (updated.length > 0) {
+          setMessages((current) => mergeMessages(current, updated));
+        }
+      })
+      .catch(() => {
+        // Silent fail — will retry on next message update
+      })
+      .finally(() => {
+        markingSeenRef.current = false;
+      });
+  }, [messages, isChatOpen, selectedChatId, currentUserId]);
+
   async function handleSend(event: React.FormEvent) {
     event.preventDefault();
     if (!selectedChatId || !draft.trim() || sending) return;
@@ -209,34 +243,6 @@ export function ChatApp() {
       setError(err instanceof Error ? err.message : "Failed to send message");
     } finally {
       setSending(false);
-    }
-  }
-
-  async function handleMarkAsRead(msgId: string) {
-    if (markingReadId) return;
-
-    setMarkingReadId(msgId);
-    setError(null);
-    try {
-      const response = await fetch("/api/messages/read", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ msgId }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        throw new Error(data?.error ?? "Failed to mark message as read");
-      }
-
-      const updated: ChatMessage = await response.json();
-      setMessages((current) => mergeMessages(current, [updated]));
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to mark message as read",
-      );
-    } finally {
-      setMarkingReadId(null);
     }
   }
 
@@ -364,17 +370,11 @@ export function ChatApp() {
                   <div className="space-y-3">
                     {filteredMessages.map((message) => {
                       const isMine = message.fromId === currentUserId;
-                      const canMarkRead =
-                        !isMine &&
-                        message.toId === currentUserId &&
-                        message.status === "SENT";
 
                       return (
                         <div
                           key={message.msgId}
-                          className={`group flex items-center gap-1.5 ${
-                            isMine ? "justify-end" : "justify-start"
-                          }`}
+                          className={`flex ${isMine ? "justify-end" : "justify-start"}`}
                         >
                           <div
                             className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
@@ -387,11 +387,7 @@ export function ChatApp() {
                               {message.text}
                             </p>
                             <div className="mt-1 flex items-center gap-1.5">
-                              <p
-                                className={`text-[10px] ${
-                                  isMine ? "text-zinc-400" : "text-zinc-400"
-                                }`}
-                              >
+                              <p className="text-[10px] text-zinc-400">
                                 {formatTime(message.sentAt)}
                               </p>
                               {isMine && message.status === "READ" ? (
@@ -404,18 +400,6 @@ export function ChatApp() {
                               ) : null}
                             </div>
                           </div>
-
-                          {canMarkRead ? (
-                            <button
-                              type="button"
-                              title="Mark as read"
-                              disabled={markingReadId === message.msgId}
-                              onClick={() => void handleMarkAsRead(message.msgId)}
-                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-500 opacity-0 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <CheckIcon />
-                            </button>
-                          ) : null}
                         </div>
                       );
                     })}
@@ -479,23 +463,6 @@ function UserAvatar({ user }: { user: ChatUser }) {
     <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-100 text-sm font-semibold text-zinc-600">
       {initials}
     </div>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg
-      viewBox="0 0 20 20"
-      fill="currentColor"
-      className="h-4 w-4"
-      aria-hidden="true"
-    >
-      <path
-        fillRule="evenodd"
-        d="M16.707 5.293a1 1 0 0 1 0 1.414l-7.25 7.25a1 1 0 0 1-1.414 0l-3.25-3.25a1 1 0 1 1 1.414-1.414L8.75 11.69l6.543-6.543a1 1 0 0 1 1.414 0Z"
-        clipRule="evenodd"
-      />
-    </svg>
   );
 }
 
