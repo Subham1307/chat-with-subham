@@ -19,7 +19,7 @@ export function getRoleFromEmail(email: string): Role {
   if (normalized.includes("alpana")) return Role.mother;
   if (normalized.includes("jethalal")) return Role.temp;
   if (normalized.includes("hackoverflow")) return Role.friend;
-  return Role.wife;
+  return Role.friend;
 }
 
 export const AUTH_CONFIG: NextAuthOptions = {
