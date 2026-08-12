@@ -8,7 +8,7 @@ import type { ChatMessage, ChatUser } from "@/types/chat";
 const ROLE_LABELS: Record<ChatUser["role"], string> = {
   admin: "Admin",
   mother: "Mother",
-  wife: "Wife",
+  wife: "what are we?",
   temp: "Temp",
   friend: "Friend",
 };
