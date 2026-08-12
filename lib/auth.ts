@@ -16,7 +16,8 @@ function requiredEnv(name: string) {
 export function getRoleFromEmail(email: string): Role {
   const normalized = email.toLowerCase();
   if (normalized.includes("subham")) return Role.admin;
-  if (normalized.includes("alpana")) return Role.mother;
+  if (normalized.includes("alpana") || normalized.includes("uttam"))
+    return Role.mother;
   if (normalized.includes("jhinuk")) return Role.wife;
   if (normalized.includes("jethalal")) return Role.temp;
   if (normalized.includes("hackoverflow")) return Role.friend;
