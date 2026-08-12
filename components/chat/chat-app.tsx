@@ -43,6 +43,9 @@ export function ChatApp() {
   const [loadingChats, setLoadingChats] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mobileShowChat, setMobileShowChat] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
@@ -176,6 +179,8 @@ export function ChatApp() {
   useEffect(() => {
     if (!isChatOpen) {
       setMessages([]);
+      setEditingMsgId(null);
+      setEditDraft("");
     }
   }, [isChatOpen, selectedChatId]);
 
@@ -249,6 +254,46 @@ export function ChatApp() {
   function handleSelectChat(chatId: string) {
     setSelectedChatId(chatId);
     setMobileShowChat(true);
+    setEditingMsgId(null);
+    setEditDraft("");
+  }
+
+  function startEditing(message: ChatMessage) {
+    setEditingMsgId(message.msgId);
+    setEditDraft(message.text);
+    setError(null);
+  }
+
+  function cancelEditing() {
+    setEditingMsgId(null);
+    setEditDraft("");
+  }
+
+  async function handleSaveEdit(msgId: string) {
+    if (!editDraft.trim() || savingEdit) return;
+
+    setSavingEdit(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/messages/${msgId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: editDraft.trim() }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error ?? "Failed to edit message");
+      }
+
+      const updated: ChatMessage = await response.json();
+      setMessages((current) => mergeMessages(current, [updated]));
+      cancelEditing();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to edit message");
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
   if (status === "loading") {
@@ -370,36 +415,95 @@ export function ChatApp() {
                   <div className="space-y-3">
                     {filteredMessages.map((message) => {
                       const isMine = message.fromId === currentUserId;
+                      const isEditing = editingMsgId === message.msgId;
 
                       return (
                         <div
                           key={message.msgId}
-                          className={`flex ${isMine ? "justify-end" : "justify-start"}`}
+                          className={`flex items-end gap-1.5 ${
+                            isMine ? "justify-end" : "justify-start"
+                          }`}
                         >
-                          <div
-                            className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
-                              isMine
-                                ? "rounded-br-md bg-zinc-900 text-white"
-                                : "rounded-bl-md bg-white text-zinc-900 ring-1 ring-zinc-100"
-                            }`}
-                          >
-                            <p className="whitespace-pre-wrap break-words">
-                              {message.text}
-                            </p>
-                            <div className="mt-1 flex items-center gap-1.5">
-                              <p className="text-[10px] text-zinc-400">
-                                {formatTime(message.sentAt)}
-                              </p>
-                              {isMine && message.status === "READ" ? (
-                                <span
-                                  className="text-[10px] text-emerald-400"
-                                  title="Read"
+                          {isMine && isEditing ? (
+                            <div className="flex max-w-[80%] flex-col gap-2 rounded-2xl rounded-br-md bg-zinc-900 px-3 py-2.5 shadow-sm">
+                              <input
+                                type="text"
+                                value={editDraft}
+                                onChange={(event) =>
+                                  setEditDraft(event.target.value)
+                                }
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    void handleSaveEdit(message.msgId);
+                                  }
+                                  if (event.key === "Escape") {
+                                    cancelEditing();
+                                  }
+                                }}
+                                autoFocus
+                                className="w-full rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white outline-none focus:border-rose-400"
+                              />
+                              <div className="flex justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={cancelEditing}
+                                  disabled={savingEdit}
+                                  className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-400 transition hover:bg-zinc-800 hover:text-white"
+                                  title="Cancel"
                                 >
-                                  ✓✓
-                                </span>
-                              ) : null}
+                                  <CloseIcon />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleSaveEdit(message.msgId)}
+                                  disabled={!editDraft.trim() || savingEdit}
+                                  className="flex h-7 w-7 items-center justify-center rounded-full text-emerald-400 transition hover:bg-zinc-800 disabled:opacity-50"
+                                  title="Save"
+                                >
+                                  <CheckIcon />
+                                </button>
+                              </div>
                             </div>
-                          </div>
+                          ) : (
+                            <>
+                              <div
+                                className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
+                                  isMine
+                                    ? "rounded-br-md bg-zinc-900 text-white"
+                                    : "rounded-bl-md bg-white text-zinc-900 ring-1 ring-zinc-100"
+                                }`}
+                              >
+                                <p className="whitespace-pre-wrap break-words">
+                                  {message.text}
+                                </p>
+                                <div className="mt-1 flex items-center gap-1.5">
+                                  <p className="text-[10px] text-zinc-400">
+                                    {formatTime(message.sentAt)}
+                                  </p>
+                                  {isMine && message.status === "READ" ? (
+                                    <span
+                                      className="text-[10px] text-emerald-400"
+                                      title="Read"
+                                    >
+                                      ✓✓
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+
+                              {isMine ? (
+                                <button
+                                  type="button"
+                                  title="Edit message"
+                                  onClick={() => startEditing(message)}
+                                  className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-500 shadow-sm transition hover:border-zinc-300 hover:text-zinc-800"
+                                >
+                                  <EditIcon />
+                                </button>
+                              ) : null}
+                            </>
+                          )}
                         </div>
                       );
                     })}
@@ -463,6 +567,49 @@ function UserAvatar({ user }: { user: ChatUser }) {
     <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-100 text-sm font-semibold text-zinc-600">
       {initials}
     </div>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      className="h-3.5 w-3.5"
+      aria-hidden="true"
+    >
+      <path d="m2.695 14.363 1.372-1.372 9.193-9.193 1.372 1.372-9.193 9.193-1.372 1.372Zm-.707 2.829 1.372-1.372.353-.353 1.372 1.372-.353.353-1.372 1.372H2v-1.372Zm11.01-9.96 1.372-1.371a1 1 0 0 1 1.414 0l.586.586a1 1 0 0 1 0 1.414l-1.372 1.372-1.972-1.972Z" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      <path
+        fillRule="evenodd"
+        d="M16.707 5.293a1 1 0 0 1 0 1.414l-7.25 7.25a1 1 0 0 1-1.414 0l-3.25-3.25a1 1 0 1 1 1.414-1.414L8.75 11.69l6.543-6.543a1 1 0 0 1 1.414 0Z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+    </svg>
   );
 }
 
