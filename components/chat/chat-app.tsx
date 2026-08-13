@@ -51,6 +51,7 @@ export function ChatApp() {
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mobileShowChat, setMobileShowChat] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
@@ -293,6 +294,18 @@ export function ChatApp() {
     setEditDraft("");
   }
 
+  async function handleCopyMessage(msgId: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedMsgId(msgId);
+      window.setTimeout(() => {
+        setCopiedMsgId((current) => (current === msgId ? null : current));
+      }, 1500);
+    } catch {
+      setError("Could not copy message");
+    }
+  }
+
   async function handleSaveEdit(msgId: string) {
     if (!editDraft.trim() || savingEdit) return;
 
@@ -500,6 +513,15 @@ export function ChatApp() {
                             </div>
                           ) : (
                             <>
+                              {isMine ? (
+                                <CopyMessageButton
+                                  msgId={message.msgId}
+                                  text={message.text}
+                                  copiedMsgId={copiedMsgId}
+                                  onCopy={handleCopyMessage}
+                                />
+                              ) : null}
+
                               <div
                                 className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
                                   isMine
@@ -534,7 +556,14 @@ export function ChatApp() {
                                 >
                                   <EditIcon />
                                 </button>
-                              ) : null}
+                              ) : (
+                                <CopyMessageButton
+                                  msgId={message.msgId}
+                                  text={message.text}
+                                  copiedMsgId={copiedMsgId}
+                                  onCopy={handleCopyMessage}
+                                />
+                              )}
                             </>
                           )}
                         </div>
@@ -626,6 +655,44 @@ function UserAvatar({ user }: { user: ChatUser }) {
     <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-100 text-sm font-semibold text-zinc-600">
       {initials}
     </div>
+  );
+}
+
+function CopyMessageButton({
+  msgId,
+  text,
+  copiedMsgId,
+  onCopy,
+}: {
+  msgId: string;
+  text: string;
+  copiedMsgId: string | null;
+  onCopy: (msgId: string, text: string) => void | Promise<void>;
+}) {
+  const copied = copiedMsgId === msgId;
+
+  return (
+    <button
+      type="button"
+      title={copied ? "Copied" : "Copy message"}
+      onClick={() => void onCopy(msgId, text)}
+      className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-500 shadow-sm transition hover:border-zinc-300 hover:text-zinc-800"
+    >
+      {copied ? <CheckIcon /> : <CopyIcon />}
+    </button>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      className="h-3.5 w-3.5"
+      aria-hidden="true"
+    >
+      <path d="M7 3.5A1.5 1.5 0 0 1 8.5 2h6A1.5 1.5 0 0 1 16 3.5v6A1.5 1.5 0 0 1 14.5 11h-6A1.5 1.5 0 0 1 7 9.5v-6ZM4.5 6A1.5 1.5 0 0 0 3 7.5v6A1.5 1.5 0 0 0 4.5 15h6a1.5 1.5 0 0 0 1.5-1.5v-.75a.75.75 0 0 0-1.5 0v.75h-6a.75.75 0 0 1-.75-.75v-6a.75.75 0 0 1 .75-.75H6a.75.75 0 0 0 0-1.5H4.5Z" />
+    </svg>
   );
 }
 
