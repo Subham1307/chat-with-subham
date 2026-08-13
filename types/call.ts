@@ -23,10 +23,31 @@ export type CallRecord = {
   status: CallStatus;
   offerSdp: string | null;
   answerSdp: string | null;
+  connectedAt: string | null;
+  endedAt: string | null;
   createdAt: string;
   updatedAt: string;
   caller?: CallPeer;
   callee?: CallPeer;
+};
+
+export type CallHistoryStatus = Extract<
+  CallStatus,
+  "ended" | "rejected" | "missed" | "busy"
+>;
+
+export type CallHistoryItem = {
+  id: string;
+  callerId: string;
+  calleeId: string;
+  type: CallType;
+  status: CallHistoryStatus;
+  createdAt: string;
+  connectedAt: string | null;
+  endedAt: string | null;
+  durationSeconds: number | null;
+  caller: CallPeer;
+  callee: CallPeer;
 };
 
 export type CallPollEvent = {

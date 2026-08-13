@@ -1,6 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { CALL_RING_TIMEOUT_MS } from "@/lib/webrtc/config";
-import type { CallPollEvent, CallRecord, CallType } from "@/types/call";
+import type {
+  CallHistoryItem,
+  CallHistoryStatus,
+  CallPollEvent,
+  CallRecord,
+  CallType,
+} from "@/types/call";
 
 const ACTIVE_STATUSES = ["ringing", "connecting"] as const;
 
@@ -21,6 +27,8 @@ export function serializeCall(call: {
   status: string;
   offerSdp: string | null;
   answerSdp: string | null;
+  connectedAt?: Date | null;
+  endedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
   caller?: { id: string; name: string | null; email: string; role: string };
@@ -34,8 +42,45 @@ export function serializeCall(call: {
     status: call.status as CallRecord["status"],
     offerSdp: call.offerSdp,
     answerSdp: call.answerSdp,
+    connectedAt: call.connectedAt?.toISOString() ?? null,
+    endedAt: call.endedAt?.toISOString() ?? null,
     createdAt: call.createdAt.toISOString(),
     updatedAt: call.updatedAt.toISOString(),
+    caller: call.caller,
+    callee: call.callee,
+  };
+}
+
+function durationSeconds(
+  connectedAt: Date | null,
+  endedAt: Date | null,
+): number | null {
+  if (!connectedAt || !endedAt) return null;
+  return Math.max(0, Math.round((endedAt.getTime() - connectedAt.getTime()) / 1000));
+}
+
+export function serializeCallHistory(call: {
+  id: string;
+  callerId: string;
+  calleeId: string;
+  type: CallType;
+  status: CallHistoryStatus;
+  connectedAt: Date | null;
+  endedAt: Date | null;
+  createdAt: Date;
+  caller: { id: string; name: string | null; email: string; role: string };
+  callee: { id: string; name: string | null; email: string; role: string };
+}): CallHistoryItem {
+  return {
+    id: call.id,
+    callerId: call.callerId,
+    calleeId: call.calleeId,
+    type: call.type,
+    status: call.status,
+    createdAt: call.createdAt.toISOString(),
+    connectedAt: call.connectedAt?.toISOString() ?? null,
+    endedAt: call.endedAt?.toISOString() ?? null,
+    durationSeconds: durationSeconds(call.connectedAt, call.endedAt),
     caller: call.caller,
     callee: call.callee,
   };
@@ -79,8 +124,42 @@ export async function cleanupCall(
       status,
       offerSdp: null,
       answerSdp: null,
+      endedAt: new Date(),
     },
   });
+}
+
+const HISTORY_STATUSES: CallHistoryStatus[] = [
+  "ended",
+  "rejected",
+  "missed",
+  "busy",
+];
+
+export async function getConversationCalls(
+  userId: string,
+  withUserId: string,
+  after?: Date | null,
+) {
+  const calls = await prisma.call.findMany({
+    where: {
+      status: { in: HISTORY_STATUSES },
+      OR: [
+        { callerId: userId, calleeId: withUserId },
+        { callerId: withUserId, calleeId: userId },
+      ],
+      ...(after ? { endedAt: { gt: after } } : {}),
+    },
+    include: callInclude,
+    orderBy: { createdAt: "asc" },
+  });
+
+  return calls.map((call) =>
+    serializeCallHistory({
+      ...call,
+      status: call.status as CallHistoryStatus,
+    }),
+  );
 }
 
 export async function getCallForParticipant(callId: string, userId: string) {

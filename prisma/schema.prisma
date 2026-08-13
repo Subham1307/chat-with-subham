@@ -73,15 +73,17 @@ enum CallStatus {
 }
 
 model Call {
-  id        String     @id @default(cuid())
-  callerId  String
-  calleeId  String
-  type      CallType
-  status    CallStatus @default(ringing)
-  offerSdp  String?
-  answerSdp String?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id          String     @id @default(cuid())
+  callerId    String
+  calleeId    String
+  type        CallType
+  status      CallStatus @default(ringing)
+  offerSdp    String?
+  answerSdp   String?
+  connectedAt DateTime?
+  endedAt     DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   caller       User              @relation("CallsMade", fields: [callerId], references: [id], onDelete: Cascade)
   callee       User              @relation("CallsReceived", fields: [calleeId], references: [id], onDelete: Cascade)

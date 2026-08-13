@@ -7,8 +7,10 @@ import { ActiveCallOverlay } from "@/components/call/active-call-overlay";
 import { CallButtons } from "@/components/call/call-buttons";
 import { IncomingCallDialog } from "@/components/call/incoming-call-dialog";
 import { useCall } from "@/hooks/useCall";
+import { CallHistoryRow } from "@/components/call/call-history-row";
+import { fetchCallHistory } from "@/lib/calls/client";
 import type { ChatMessage, ChatUser } from "@/types/chat";
-import type { CallType } from "@/types/call";
+import type { CallHistoryItem, CallType } from "@/types/call";
 
 const ROLE_LABELS: Record<ChatUser["role"], string> = {
   admin: "Admin",
@@ -39,10 +41,28 @@ function mergeMessages(
   );
 }
 
+function mergeCalls(
+  current: CallHistoryItem[],
+  incoming: CallHistoryItem[],
+): CallHistoryItem[] {
+  const byId = new Map(current.map((call) => [call.id, call]));
+  for (const call of incoming) {
+    byId.set(call.id, call);
+  }
+  return Array.from(byId.values()).sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+}
+
+type TimelineItem =
+  | { kind: "message"; at: number; message: ChatMessage }
+  | { kind: "call"; at: number; call: CallHistoryItem };
+
 export function ChatApp() {
   const { data: session, status } = useSession();
   const [chats, setChats] = useState<ChatUser[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [callHistory, setCallHistory] = useState<CallHistoryItem[]>([]);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [loadingChats, setLoadingChats] = useState(false);
@@ -57,6 +77,7 @@ export function ChatApp() {
   const [isDesktop, setIsDesktop] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const afterRef = useRef<string>(new Date(0).toISOString());
+  const callsAfterRef = useRef<string>(new Date(0).toISOString());
   const markingSeenRef = useRef(false);
 
   const currentUserId = session?.user?.id;
@@ -80,13 +101,28 @@ export function ChatApp() {
   callActiveRef.current = isInCall;
 
   const showIncomingDialog = call.connectionStatus === "incoming" && call.incomingCall;
+  const prevCallStatusRef = useRef(call.connectionStatus);
 
   const selectedChat = useMemo(
     () => chats.find((chat) => chat.id === selectedChatId) ?? null,
     [chats, selectedChatId],
   );
 
-  const filteredMessages = messages;
+  const timeline = useMemo<TimelineItem[]>(() => {
+    const items: TimelineItem[] = [
+      ...messages.map((message) => ({
+        kind: "message" as const,
+        at: new Date(message.sentAt).getTime(),
+        message,
+      })),
+      ...callHistory.map((item) => ({
+        kind: "call" as const,
+        at: new Date(item.createdAt).getTime(),
+        call: item,
+      })),
+    ];
+    return items.sort((a, b) => a.at - b.at);
+  }, [messages, callHistory]);
 
   useEffect(() => {
     const media = window.matchMedia("(min-width: 640px)");
@@ -95,6 +131,33 @@ export function ChatApp() {
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
+
+  const applyCallHistory = useCallback((incoming: CallHistoryItem[]) => {
+    if (incoming.length === 0) return;
+    setCallHistory((current) => mergeCalls(current, incoming));
+    const latest = incoming.reduce((max, item) => {
+      const stamp = item.endedAt ?? item.createdAt;
+      return stamp > max ? stamp : max;
+    }, incoming[0].endedAt ?? incoming[0].createdAt);
+    if (latest > callsAfterRef.current) {
+      callsAfterRef.current = latest;
+    }
+  }, []);
+
+  const loadCallHistory = useCallback(
+    async (chatId: string, after: string, signal?: AbortSignal) => {
+      try {
+        const calls = await fetchCallHistory(chatId, {
+          after: after === new Date(0).toISOString() ? undefined : after,
+          signal,
+        });
+        applyCallHistory(calls);
+      } catch {
+        if (signal?.aborted) return;
+      }
+    },
+    [applyCallHistory],
+  );
 
   const loadChats = useCallback(async () => {
     setLoadingChats(true);
@@ -130,6 +193,7 @@ export function ChatApp() {
           data.length > 0
             ? data[data.length - 1].sentAt
             : new Date(0).toISOString();
+        await loadCallHistory(chatId, new Date(0).toISOString(), signal);
       } catch (err) {
         if (signal?.aborted) return;
         setError("Could not load messages. Please try again.");
@@ -139,7 +203,7 @@ export function ChatApp() {
         }
       }
     },
-    [],
+    [loadCallHistory],
   );
 
   useEffect(() => {
@@ -156,7 +220,9 @@ export function ChatApp() {
     let active = true;
 
     setMessages([]);
+    setCallHistory([]);
     afterRef.current = new Date(0).toISOString();
+    callsAfterRef.current = new Date(0).toISOString();
 
     async function pollMessages(chatId: string) {
       while (active && !abortController.signal.aborted) {
@@ -184,6 +250,8 @@ export function ChatApp() {
             afterRef.current = newMessages[newMessages.length - 1].sentAt;
           }
 
+          await loadCallHistory(chatId, callsAfterRef.current, abortController.signal);
+
           // When not using long-poll, add a short delay between requests
           if (!useWait) {
             await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -206,11 +274,12 @@ export function ChatApp() {
       active = false;
       abortController.abort();
     };
-  }, [isChatOpen, selectedChatId, status, loadInitialMessages]);
+  }, [isChatOpen, selectedChatId, status, loadInitialMessages, loadCallHistory]);
 
   useEffect(() => {
     if (!isChatOpen) {
       setMessages([]);
+      setCallHistory([]);
       setEditingMsgId(null);
       setEditDraft("");
     }
@@ -218,7 +287,20 @@ export function ChatApp() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [filteredMessages]);
+  }, [timeline]);
+
+  useEffect(() => {
+    const prev = prevCallStatusRef.current;
+    prevCallStatusRef.current = call.connectionStatus;
+
+    if (!isChatOpen || !selectedChatId) return;
+    if (call.connectionStatus !== "ended" && call.connectionStatus !== "idle") {
+      return;
+    }
+    if (prev === "idle" || prev === "ended") return;
+
+    void loadCallHistory(selectedChatId, callsAfterRef.current);
+  }, [call.connectionStatus, isChatOpen, loadCallHistory, selectedChatId]);
 
   useEffect(() => {
     if (!isChatOpen || !selectedChatId || !currentUserId) return;
@@ -463,9 +545,9 @@ export function ChatApp() {
               </div>
 
               <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-                {loadingMessages && filteredMessages.length === 0 ? (
+                {loadingMessages && timeline.length === 0 ? (
                   <p className="text-sm text-zinc-500">Loading messages...</p>
-                ) : filteredMessages.length === 0 ? (
+                ) : timeline.length === 0 ? (
                   <div className="flex h-full items-center justify-center">
                     <p className="text-sm text-zinc-400">
                       No messages yet. Say hello!
@@ -473,7 +555,18 @@ export function ChatApp() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {filteredMessages.map((message) => {
+                    {timeline.map((item) => {
+                      if (item.kind === "call") {
+                        return currentUserId ? (
+                          <CallHistoryRow
+                            key={item.call.id}
+                            item={item.call}
+                            currentUserId={currentUserId}
+                          />
+                        ) : null;
+                      }
+
+                      const message = item.message;
                       const isMine = message.fromId === currentUserId;
                       const isEditing = editingMsgId === message.msgId;
 

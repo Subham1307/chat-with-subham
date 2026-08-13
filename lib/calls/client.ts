@@ -1,4 +1,4 @@
-import type { CallPollEvent, CallRecord, CallType } from "@/types/call";
+import type { CallHistoryItem, CallPollEvent, CallRecord, CallType } from "@/types/call";
 
 async function parseError(response: Response, fallback: string) {
   const data = await response.json().catch(() => null);
@@ -74,6 +74,24 @@ export async function postEnd(callId: string) {
   if (!response.ok) {
     throw new Error(await parseError(response, "Failed to end call"));
   }
+}
+
+export async function fetchCallHistory(
+  withUserId: string,
+  options?: { after?: string; signal?: AbortSignal },
+) {
+  const params = new URLSearchParams({ withUserId });
+  if (options?.after) params.set("after", options.after);
+
+  const response = await fetch(`/api/calls/history?${params}`, {
+    signal: options?.signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Failed to load call history"));
+  }
+
+  return response.json() as Promise<CallHistoryItem[]>;
 }
 
 export async function pollCalls(

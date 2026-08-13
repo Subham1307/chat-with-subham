@@ -49,6 +49,7 @@ export async function POST(request: Request) {
     data: {
       status: "connecting",
       answerSdp: sdp,
+      connectedAt: new Date(),
     },
     include: {
       caller: { select: { id: true, name: true, email: true, role: true } },
