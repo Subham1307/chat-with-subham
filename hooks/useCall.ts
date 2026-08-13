@@ -150,6 +150,11 @@ export function useCall({ userId, enabled }: UseCallOptions) {
   const finalizeCall = useCallback(
     async (callId: string | null, notifyRemote = true) => {
       clearRingTimer();
+      
+      if (connectionStatusRef.current === "ended" || connectionStatusRef.current === "idle") {
+        return;
+      }
+
       if (notifyRemote && callId) {
         try {
           await postEnd(callId);
@@ -175,6 +180,11 @@ export function useCall({ userId, enabled }: UseCallOptions) {
       ) {
         return;
       }
+      
+      if (connectionStatusRef.current === "ended" || connectionStatusRef.current === "idle") {
+        return;
+      }
+
       void finalizeCall(null, false);
     },
     [finalizeCall],
@@ -250,6 +260,7 @@ export function useCall({ userId, enabled }: UseCallOptions) {
 
         if (event.type === "ended") {
           handleRemoteEnded(event.callId);
+          continue;
         }
       }
 
@@ -308,7 +319,7 @@ export function useCall({ userId, enabled }: UseCallOptions) {
 
     if (next === "failed") {
       setCallError("Connection failed");
-      void finalizeCall(activeCallRef.current?.id ?? null);
+      void finalizeCall(activeCallRef.current?.id ?? null, true);
     }
   }, [
     connectionStatus,
@@ -421,9 +432,9 @@ export function useCall({ userId, enabled }: UseCallOptions) {
   }, [incomingCall, resetCallState]);
 
   const endCall = useCallback(async () => {
-    const callId = activeCallRef.current?.id ?? incomingCall?.id ?? null;
-    await finalizeCall(callId);
-  }, [finalizeCall, incomingCall?.id]);
+    const callId = activeCallRef.current?.id ?? incomingCallRef.current?.id ?? null;
+    await finalizeCall(callId, true);
+  }, [finalizeCall]);
 
   const activePeerName = activeCall
     ? peerLabel(activeCall, userId ?? "")
