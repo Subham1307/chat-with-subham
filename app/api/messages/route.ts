@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 export const maxDuration = 10;
 
-const POLL_TIMEOUT_MS = 8_000;
+const POLL_TIMEOUT_MS = 5_000;
 const POLL_INTERVAL_MS = 1_000;
 
 function sleep(ms: number) {

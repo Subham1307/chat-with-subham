@@ -74,6 +74,11 @@ export function ChatApp() {
     call.connectionStatus !== "ended" &&
     call.connectionStatus !== "incoming";
 
+  // Mirror isInCall as a ref so the message poll loop can read it without
+  // restarting whenever the call status changes.
+  const callActiveRef = useRef(false);
+  callActiveRef.current = isInCall;
+
   const showIncomingDialog = call.connectionStatus === "incoming" && call.incomingCall;
 
   const selectedChat = useMemo(
@@ -156,10 +161,14 @@ export function ChatApp() {
     async function pollMessages(chatId: string) {
       while (active && !abortController.signal.aborted) {
         try {
+          // During an active call, avoid long-polling to prevent exhausting
+          // the browser's 6-connection-per-domain limit which blocks the
+          // call signaling poll and causes calls to drop.
+          const useWait = !callActiveRef.current;
           const params = new URLSearchParams({
             withUserId: chatId,
             after: afterRef.current,
-            wait: "true",
+            ...(useWait ? { wait: "true" } : {}),
           });
           const response = await fetch(`/api/messages?${params}`, {
             signal: abortController.signal,
@@ -173,6 +182,11 @@ export function ChatApp() {
           if (newMessages.length > 0) {
             setMessages((current) => mergeMessages(current, newMessages));
             afterRef.current = newMessages[newMessages.length - 1].sentAt;
+          }
+
+          // When not using long-poll, add a short delay between requests
+          if (!useWait) {
+            await new Promise((resolve) => setTimeout(resolve, 3000));
           }
         } catch (err) {
           if (abortController.signal.aborted) break;
