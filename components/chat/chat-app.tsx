@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { LoginScreen } from "@/components/chat/login-screen";
+import { ActiveCallOverlay } from "@/components/call/active-call-overlay";
+import { CallButtons } from "@/components/call/call-buttons";
+import { IncomingCallDialog } from "@/components/call/incoming-call-dialog";
+import { useCall } from "@/hooks/useCall";
 import type { ChatMessage, ChatUser } from "@/types/chat";
+import type { CallType } from "@/types/call";
 
 const ROLE_LABELS: Record<ChatUser["role"], string> = {
   admin: "Admin",
@@ -57,6 +62,18 @@ export function ChatApp() {
   const isChatOpen = Boolean(
     selectedChatId && (isDesktop || mobileShowChat),
   );
+
+  const call = useCall({
+    userId: currentUserId,
+    enabled: status === "authenticated",
+  });
+
+  const isInCall =
+    call.connectionStatus !== "idle" &&
+    call.connectionStatus !== "ended" &&
+    call.connectionStatus !== "incoming";
+
+  const showIncomingDialog = call.connectionStatus === "incoming" && call.incomingCall;
 
   const selectedChat = useMemo(
     () => chats.find((chat) => chat.id === selectedChatId) ?? null,
@@ -221,6 +238,13 @@ export function ChatApp() {
         markingSeenRef.current = false;
       });
   }, [messages, isChatOpen, selectedChatId, currentUserId]);
+
+  async function handleStartCall(type: CallType) {
+    if (!selectedChatId || call.isBusy || call.activeCall || call.incomingCall) {
+      return;
+    }
+    await call.startCall(selectedChatId, type);
+  }
 
   async function handleSend(event: React.FormEvent) {
     event.preventDefault();
@@ -400,6 +424,15 @@ export function ChatApp() {
                     {ROLE_LABELS[selectedChat.role]}
                   </p>
                 </div>
+                <CallButtons
+                  disabled={
+                    call.isBusy ||
+                    Boolean(call.activeCall) ||
+                    Boolean(call.incomingCall) ||
+                    call.connectionStatus === "calling"
+                  }
+                  onStartCall={(type) => void handleStartCall(type)}
+                />
               </div>
 
               <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
@@ -512,10 +545,10 @@ export function ChatApp() {
                 )}
               </div>
 
-              {error ? (
+              {error || call.callError ? (
                 <div className="px-4 pb-2 sm:px-6">
                   <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">
-                    {error}
+                    {error ?? call.callError}
                   </p>
                 </div>
               ) : null}
@@ -551,6 +584,32 @@ export function ChatApp() {
           )}
         </main>
       </div>
+
+      {showIncomingDialog && call.incomingCall ? (
+        <IncomingCallDialog
+          call={call.incomingCall}
+          peerName={call.activePeerName ?? "Unknown"}
+          busy={call.isBusy}
+          onAccept={() => void call.acceptCall()}
+          onReject={() => void call.rejectCall()}
+        />
+      ) : null}
+
+      {isInCall && call.activeCall ? (
+        <ActiveCallOverlay
+          peerName={call.activePeerName ?? "Unknown"}
+          callType={call.activeCall.type}
+          connectionStatus={call.connectionStatus}
+          localStream={call.localStream}
+          remoteStream={call.remoteStream}
+          isMuted={call.isMuted}
+          isCameraOff={call.isCameraOff}
+          busy={call.isBusy}
+          onToggleMute={call.toggleMute}
+          onToggleCamera={call.toggleCamera}
+          onEndCall={() => void call.endCall()}
+        />
+      ) : null}
     </div>
   );
 }

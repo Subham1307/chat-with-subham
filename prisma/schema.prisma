@@ -35,6 +35,8 @@ model User {
 
   sentMessages     Message[] @relation("SentMessages")
   receivedMessages Message[] @relation("ReceivedMessages")
+  callsMade        Call[]    @relation("CallsMade")
+  callsReceived    Call[]    @relation("CallsReceived")
 
   @@map("users")
 }
@@ -54,4 +56,52 @@ model Message {
   @@index([fromId, toId])
   @@index([toId, fromId])
   @@map("messages")
+}
+
+enum CallType {
+  audio
+  video
+}
+
+enum CallStatus {
+  ringing
+  connecting
+  rejected
+  ended
+  missed
+  busy
+}
+
+model Call {
+  id        String     @id @default(cuid())
+  callerId  String
+  calleeId  String
+  type      CallType
+  status    CallStatus @default(ringing)
+  offerSdp  String?
+  answerSdp String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  caller       User              @relation("CallsMade", fields: [callerId], references: [id], onDelete: Cascade)
+  callee       User              @relation("CallsReceived", fields: [calleeId], references: [id], onDelete: Cascade)
+  iceCandidates CallIceCandidate[]
+
+  @@index([callerId, status])
+  @@index([calleeId, status])
+  @@index([updatedAt])
+  @@map("calls")
+}
+
+model CallIceCandidate {
+  id         String   @id @default(cuid())
+  callId     String
+  fromUserId String
+  candidate  String
+  createdAt  DateTime @default(now())
+
+  call Call @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@index([callId, createdAt])
+  @@map("call_ice_candidates")
 }
