@@ -170,6 +170,10 @@ export function useWebRTC() {
       const pc = pcRef.current;
       if (!pc) return;
 
+      if (pc.remoteDescription?.type === "answer") {
+        return;
+      }
+
       await pc.setRemoteDescription(
         new RTCSessionDescription({ type: "answer", sdp: answerSdp }),
       );

@@ -57,6 +57,9 @@ export function useCall({ userId, enabled }: UseCallOptions) {
   const activeCallRef = useRef<CallRecord | null>(null);
   const roleRef = useRef<"caller" | "callee" | null>(null);
   const ringTimerRef = useRef<number | null>(null);
+  const answerAppliedRef = useRef(false);
+  const connectionStatusRef = useRef<ConnectionStatus>("idle");
+  const incomingCallRef = useRef<CallRecord | null>(null);
   const pendingOutgoingCandidatesRef = useRef<
     { callId: string; candidate: RTCIceCandidateInit }[]
   >([]);
@@ -67,6 +70,14 @@ export function useCall({ userId, enabled }: UseCallOptions) {
   const [activeCall, setActiveCall] = useState<CallRecord | null>(null);
   const [callError, setCallError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+
+  useEffect(() => {
+    connectionStatusRef.current = connectionStatus;
+  }, [connectionStatus]);
+
+  useEffect(() => {
+    incomingCallRef.current = incomingCall;
+  }, [incomingCall]);
 
   const clearRingTimer = useCallback(() => {
     if (ringTimerRef.current !== null) {
@@ -79,6 +90,7 @@ export function useCall({ userId, enabled }: UseCallOptions) {
     clearRingTimer();
     activeCallRef.current = null;
     roleRef.current = null;
+    answerAppliedRef.current = false;
     pendingOutgoingCandidatesRef.current = [];
     setActiveCall(null);
     setIncomingCall(null);
@@ -157,12 +169,15 @@ export function useCall({ userId, enabled }: UseCallOptions) {
 
   const handleRemoteEnded = useCallback(
     (callId: string) => {
-      if (activeCallRef.current?.id !== callId && incomingCall?.id !== callId) {
+      if (
+        activeCallRef.current?.id !== callId &&
+        incomingCallRef.current?.id !== callId
+      ) {
         return;
       }
       void finalizeCall(null, false);
     },
-    [finalizeCall, incomingCall?.id],
+    [finalizeCall],
   );
 
   const processPollEvents = useCallback(
@@ -173,8 +188,8 @@ export function useCall({ userId, enabled }: UseCallOptions) {
         if (event.type === "incoming") {
           if (
             activeCallRef.current ||
-            incomingCall ||
-            connectionStatus === "calling"
+            incomingCallRef.current ||
+            connectionStatusRef.current === "calling"
           ) {
             continue;
           }
@@ -184,8 +199,12 @@ export function useCall({ userId, enabled }: UseCallOptions) {
         }
 
         if (event.type === "answered" && activeCallRef.current?.id === event.callId) {
+          if (answerAppliedRef.current) {
+            continue;
+          }
           try {
             await webrtc.applyAnswer(event.answerSdp);
+            answerAppliedRef.current = true;
             setConnectionStatus("connecting");
           } catch {
             setCallError("Failed to connect the call");
@@ -217,7 +236,7 @@ export function useCall({ userId, enabled }: UseCallOptions) {
         if (event.type === "missed") {
           if (
             activeCallRef.current?.id === event.callId ||
-            incomingCall?.id === event.callId
+            incomingCallRef.current?.id === event.callId
           ) {
             setCallError("Call timed out");
             void finalizeCall(null, false);
@@ -230,13 +249,7 @@ export function useCall({ userId, enabled }: UseCallOptions) {
         }
       }
     },
-    [
-      connectionStatus,
-      finalizeCall,
-      handleRemoteEnded,
-      incomingCall,
-      webrtc,
-    ],
+    [finalizeCall, handleRemoteEnded, webrtc],
   );
 
   useEffect(() => {

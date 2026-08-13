@@ -45,10 +45,5 @@ export async function POST(request: Request) {
     },
   });
 
-  await prisma.call.update({
-    where: { id: callId },
-    data: { updatedAt: new Date() },
-  });
-
   return NextResponse.json({ ok: true });
 }
