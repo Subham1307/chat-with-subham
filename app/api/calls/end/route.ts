@@ -28,11 +28,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Call not found" }, { status: 404 });
   }
 
-  if (!["ringing", "connecting", "ended", "missed", "rejected", "busy"].includes(call.status)) {
-    return NextResponse.json({ error: "Call already ended" }, { status: 409 });
-  }
-
-  if (call.status === "ringing" || call.status === "connecting") {
+  if (["ringing", "connecting"].includes(call.status)) {
     await cleanupCall(callId, "ended");
   }
 
