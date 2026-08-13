@@ -181,9 +181,10 @@ export function ChatApp() {
     async (chatId: string, signal?: AbortSignal) => {
       setLoadingMessages(true);
       try {
-        const response = await fetch(`/api/messages?withUserId=${chatId}`, {
-          signal,
-        });
+        const [response] = await Promise.all([
+          fetch(`/api/messages?withUserId=${chatId}`, { signal }),
+          loadCallHistory(chatId, new Date(0).toISOString(), signal),
+        ]);
         if (!response.ok) {
           throw new Error("Failed to load messages");
         }
@@ -193,7 +194,6 @@ export function ChatApp() {
           data.length > 0
             ? data[data.length - 1].sentAt
             : new Date(0).toISOString();
-        await loadCallHistory(chatId, new Date(0).toISOString(), signal);
       } catch (err) {
         if (signal?.aborted) return;
         setError("Could not load messages. Please try again.");
@@ -249,8 +249,6 @@ export function ChatApp() {
             setMessages((current) => mergeMessages(current, newMessages));
             afterRef.current = newMessages[newMessages.length - 1].sentAt;
           }
-
-          await loadCallHistory(chatId, callsAfterRef.current, abortController.signal);
 
           // When not using long-poll, add a short delay between requests
           if (!useWait) {
