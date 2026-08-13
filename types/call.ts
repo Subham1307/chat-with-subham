@@ -29,7 +29,9 @@ export type CallRecord = {
   callee?: CallPeer;
 };
 
-export type CallPollEvent =
+export type CallPollEvent = {
+  timestamp: string;
+} & (
   | {
       type: "incoming";
       call: CallRecord;
@@ -60,7 +62,8 @@ export type CallPollEvent =
       callId: string;
       fromUserId: string;
       candidate: RTCIceCandidateInit;
-    };
+    }
+);
 
 export type ConnectionStatus =
   | "idle"

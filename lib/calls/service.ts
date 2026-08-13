@@ -114,6 +114,7 @@ export async function collectPollEvents(
 
   for (const call of incoming) {
     events.push({
+      timestamp: call.updatedAt.toISOString(),
       type: "incoming",
       call: serializeCall(call),
     });
@@ -130,20 +131,22 @@ export async function collectPollEvents(
   });
 
   for (const call of updatedCalls) {
+    const timestamp = call.updatedAt.toISOString();
     if (call.status === "connecting" && call.answerSdp && call.callerId === userId) {
       events.push({
+        timestamp,
         type: "answered",
         callId: call.id,
         answerSdp: call.answerSdp,
       });
     } else if (call.status === "rejected") {
-      events.push({ type: "rejected", callId: call.id });
+      events.push({ timestamp, type: "rejected", callId: call.id });
     } else if (call.status === "ended") {
-      events.push({ type: "ended", callId: call.id });
+      events.push({ timestamp, type: "ended", callId: call.id });
     } else if (call.status === "missed") {
-      events.push({ type: "missed", callId: call.id });
+      events.push({ timestamp, type: "missed", callId: call.id });
     } else if (call.status === "busy") {
-      events.push({ type: "busy", callId: call.id });
+      events.push({ timestamp, type: "busy", callId: call.id });
     }
   }
 
@@ -171,6 +174,7 @@ export async function collectPollEvents(
 
     for (const item of candidates) {
       events.push({
+        timestamp: item.createdAt.toISOString(),
         type: "candidate",
         callId: item.callId,
         fromUserId: item.fromUserId,

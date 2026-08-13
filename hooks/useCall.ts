@@ -182,8 +182,12 @@ export function useCall({ userId, enabled }: UseCallOptions) {
 
   const processPollEvents = useCallback(
     async (events: Awaited<ReturnType<typeof pollCalls>>) => {
+      let maxTimestamp = afterRef.current;
+
       for (const event of events) {
-        afterRef.current = new Date().toISOString();
+        if (event.timestamp > maxTimestamp) {
+          maxTimestamp = event.timestamp;
+        }
 
         if (event.type === "incoming") {
           if (
@@ -248,6 +252,8 @@ export function useCall({ userId, enabled }: UseCallOptions) {
           handleRemoteEnded(event.callId);
         }
       }
+
+      afterRef.current = maxTimestamp;
     },
     [finalizeCall, handleRemoteEnded, webrtc],
   );
