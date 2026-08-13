@@ -3,7 +3,7 @@ import { collectPollEvents, waitForPollEvents } from "@/lib/calls/service";
 import { requireAuthUser } from "@/lib/require-auth";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 10;
+export const maxDuration = 8;
 
 export async function GET(request: NextRequest) {
   const authResult = await requireAuthUser();

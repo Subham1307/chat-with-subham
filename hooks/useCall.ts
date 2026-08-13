@@ -194,6 +194,10 @@ export function useCall({ userId, enabled }: UseCallOptions) {
           try {
             await webrtcRef.current.applyAnswer(event.answerSdp);
             answerAppliedRef.current = true;
+            if (ringTimerRef.current !== null) {
+              window.clearTimeout(ringTimerRef.current);
+              ringTimerRef.current = null;
+            }
             setStatus("connecting");
           } catch {
             setCallError("Failed to connect the call");
@@ -274,8 +278,11 @@ export function useCall({ userId, enabled }: UseCallOptions) {
           if (events.length > 0) {
             await processPollEvents(events);
           }
-        } catch {
+        } catch (error) {
           if (abortController.signal.aborted) break;
+          const isAbort =
+            error instanceof DOMException && error.name === "AbortError";
+          if (isAbort) break;
           await new Promise((resolve) => window.setTimeout(resolve, 2000));
         }
       }
@@ -289,19 +296,27 @@ export function useCall({ userId, enabled }: UseCallOptions) {
     };
   }, [enabled, userId, processPollEvents]);
 
-  // Monitor WebRTC connection state - with grace period for ICE failures
+  // Monitor WebRTC connection. Do not hang up on "disconnected" — that is
+  // a normal ICE blip. Only end after a real "failed" state lasts a while.
   useEffect(() => {
     const status = connectionStatusRef.current;
-    if (status === "idle" || status === "incoming" || status === "ended") {
+    if (
+      status === "idle" ||
+      status === "incoming" ||
+      status === "ended" ||
+      status === "calling"
+    ) {
       return;
     }
 
     const { peerConnectionState, iceConnectionState } = webrtc;
-
-    if (
+    const isUp =
       peerConnectionState === "connected" &&
-      (iceConnectionState === "connected" || iceConnectionState === "completed")
-    ) {
+      (iceConnectionState === "connected" || iceConnectionState === "completed");
+    const isFailed =
+      iceConnectionState === "failed" || peerConnectionState === "failed";
+
+    if (isUp) {
       clearIceFailureTimer();
       if (status !== "connected") {
         setStatus("connected");
@@ -309,13 +324,18 @@ export function useCall({ userId, enabled }: UseCallOptions) {
       return;
     }
 
-    if (iceConnectionState === "failed" || peerConnectionState === "failed") {
-      // Don't immediately end the call - give it a grace period to recover
+    if (isFailed) {
       if (iceFailureTimerRef.current === null) {
         iceFailureTimerRef.current = window.setTimeout(() => {
           iceFailureTimerRef.current = null;
-          // Check if still failed after grace period
-          if (connectionStatusRef.current !== "ended" && connectionStatusRef.current !== "idle") {
+          const stillFailed =
+            webrtcRef.current.iceConnectionState === "failed" ||
+            webrtcRef.current.peerConnectionState === "failed";
+          if (
+            stillFailed &&
+            connectionStatusRef.current !== "ended" &&
+            connectionStatusRef.current !== "idle"
+          ) {
             setCallError("Connection failed");
             void finalizeCallRef.current(activeCallRef.current?.id ?? null, true);
           }
@@ -327,21 +347,20 @@ export function useCall({ userId, enabled }: UseCallOptions) {
       return;
     }
 
-    if (iceConnectionState === "disconnected" || peerConnectionState === "disconnected") {
-      if (status !== "reconnecting" && status !== "calling") {
+    clearIceFailureTimer();
+
+    if (
+      iceConnectionState === "disconnected" ||
+      peerConnectionState === "disconnected"
+    ) {
+      if (status !== "reconnecting") {
         setStatus("reconnecting");
       }
       return;
     }
 
-    if (
-      status === "connecting" ||
-      peerConnectionState === "connecting" ||
-      iceConnectionState === "checking"
-    ) {
-      if (status !== "connecting" && status !== "calling") {
-        setStatus("connecting");
-      }
+    if (status !== "connecting") {
+      setStatus("connecting");
     }
   }, [
     webrtc.peerConnectionState,
@@ -371,7 +390,10 @@ export function useCall({ userId, enabled }: UseCallOptions) {
         await flushOutgoingCandidates(call.id);
 
         ringTimerRef.current = window.setTimeout(() => {
-          if (activeCallRef.current?.id === call.id) {
+          if (
+            activeCallRef.current?.id === call.id &&
+            connectionStatusRef.current === "calling"
+          ) {
             setCallError("No answer");
             void finalizeCallRef.current(call.id, true);
           }
@@ -411,6 +433,7 @@ export function useCall({ userId, enabled }: UseCallOptions) {
         queueOrSendCandidate(incoming.id, candidate);
       });
 
+      await flushOutgoingCandidates(incoming.id);
       const call = await postAnswer(incoming.id, sdp);
       activeCallRef.current = call;
       roleRef.current = "callee";
@@ -433,6 +456,7 @@ export function useCall({ userId, enabled }: UseCallOptions) {
     }
   }, [
     clearRingTimer,
+    flushOutgoingCandidates,
     queueOrSendCandidate,
     resetCallState,
     setStatus,

@@ -88,6 +88,10 @@ export async function pollCalls(
     signal: options?.signal,
   });
 
+  if (options?.signal?.aborted) {
+    return [];
+  }
+
   if (!response.ok) {
     throw new Error(await parseError(response, "Failed to poll calls"));
   }

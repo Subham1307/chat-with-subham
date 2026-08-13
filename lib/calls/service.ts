@@ -190,7 +190,7 @@ export async function waitForPollEvents(
   userId: string,
   after: Date,
   activeCallId?: string | null,
-  timeoutMs = 8_000,
+  timeoutMs = 4_000,
   intervalMs = 1_000,
 ) {
   const deadline = Date.now() + timeoutMs;

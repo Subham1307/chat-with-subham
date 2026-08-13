@@ -4,3 +4,6 @@ export const ICE_SERVERS: RTCIceServer[] = [
 ];
 
 export const CALL_RING_TIMEOUT_MS = 45_000;
+
+/** Keep well under Vercel Hobby's ~10s function limit. */
+export const CALL_POLL_TIMEOUT_MS = 4_000;
